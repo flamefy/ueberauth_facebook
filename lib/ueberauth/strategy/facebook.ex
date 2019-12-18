@@ -18,14 +18,17 @@ defmodule Ueberauth.Strategy.Facebook do
   alias Ueberauth.Auth.Info
   alias Ueberauth.Auth.Credentials
   alias Ueberauth.Auth.Extra
-
+  require Logger
   @doc """
   Handles initial request for Facebook authentication.
   """
   def handle_request!(conn) do
+    Logger.info("*********handle_request*****************")
     allowed_params = conn
      |> option(:allowed_request_params)
      |> Enum.map(&to_string/1)
+
+    Logger.info("*****handle_request*****allowed_params**************** #{inspect( allowed_params, pretty: true)}")
 
     authorize_url = conn.params
       |> maybe_replace_param(conn, "auth_type", :auth_type)
@@ -37,6 +40,7 @@ defmodule Ueberauth.Strategy.Facebook do
       |> Keyword.put(:redirect_uri, callback_url(conn))
       |> Ueberauth.Strategy.Facebook.OAuth.authorize_url!(conn: conn)
 
+    Logger.info("*********handle_request**********authorize_url******* #{inspect authorize_url}")
     redirect!(conn, authorize_url)
   end
 
@@ -217,6 +221,7 @@ defmodule Ueberauth.Strategy.Facebook do
 
   defp option(conn, key) do
     default = Keyword.get(default_options(), key)
+    Logger.info("****option********default************** #{inspect default}")
     case options(conn) do
       nil ->
         default
@@ -277,6 +282,7 @@ defmodule Ueberauth.Strategy.Facebook do
   end
 
   def get_credentials(%OAuth2.AccessToken{other_params: other_params} = token) do
+    Logger.info("**********************.get_credentials********************** #{token}")
     %Credentials{
       expires: !!token.expires_at,
       expires_at: token.expires_at,
