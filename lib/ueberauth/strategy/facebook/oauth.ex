@@ -31,11 +31,14 @@ defmodule Ueberauth.Strategy.Facebook.OAuth do
     config = Application.get_env(:ueberauth, Ueberauth.Strategy.Facebook.OAuth)
              |> compute_config(opts)
 
+    Logger.warn("****OAuth *client config******************* #{inspect(config, pretty: true)}")
+
     opts =
       @defaults
       |> Keyword.merge(config)
       |> Keyword.merge(opts)
 
+    Logger.warn("****OAuth *client opts******************* #{inspect(opts, pretty: true)}")
     OAuth2.Client.new(opts)
   end
 
