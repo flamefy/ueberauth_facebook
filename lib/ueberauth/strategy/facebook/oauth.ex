@@ -28,20 +28,25 @@ defmodule Ueberauth.Strategy.Facebook.OAuth do
   of Ueberauth.
   """
   def client(opts \\ []) do
-    config = Application.get_env(:ueberauth, Ueberauth.Strategy.Facebook.OAuth, [])
+    config = Application.get_env(:ueberauth, Ueberauth.Strategy.Facebook.OAuth)
+      |> compute_config(opts)
 
-    opts =
-      @defaults
+    Logger.warn("****OAuth *client ***********start*******")
+
+    opts = @defaults
       |> Keyword.merge(config)
       |> Keyword.merge(opts)
 
+    Logger.warn("****OAuth *client ************after ops merge*****opts * #{inspect(opts, pretty: true)}")
+
     json_library = Ueberauth.json_library()
 
+    Logger.warn("****OAuth *client ************before Client.new*****")
     OAuth2.Client.new(opts)
     |> OAuth2.Client.put_serializer("application/json", json_library)
   end
 
-  defp compute_config(config, opts) do
+  def compute_config(config, opts) do
     case Keyword.get(opts, :conn) do
       %Plug.Conn{} = conn ->
         with {:ok, client_id} <- Keyword.get(config, :client_id) |> ensure_exists(:get_client_id, 1, [conn]),
@@ -82,6 +87,7 @@ defmodule Ueberauth.Strategy.Facebook.OAuth do
   end
 
   def get_token!(params \\ [], opts \\ []) do
+    Logger.warn("********get_token*********************** #{inspect(params, pretty: true)}")
     opts
     |> client
     |> OAuth2.Client.get_token!(params)

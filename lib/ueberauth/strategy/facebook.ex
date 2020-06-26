@@ -18,20 +18,19 @@ defmodule Ueberauth.Strategy.Facebook do
   alias Ueberauth.Auth.Info
   alias Ueberauth.Auth.Credentials
   alias Ueberauth.Auth.Extra
-
+  require Logger
   @doc """
   Handles initial request for Facebook authentication.
   """
   def handle_request!(conn) do
-    allowed_params =
-      conn
+    allowed_params = conn
       |> option(:allowed_request_params)
       |> Enum.map(&to_string/1)
 
-    opts = oauth_client_options_from_conn(conn)
+    # opts = oauth_client_options_from_conn(conn)
+    Logger.warn("****strat fb *handle_request opts************")
 
-    authorize_url =
-      conn.params
+    authorize_url = conn.params
       |> maybe_replace_param(conn, "auth_type", :auth_type)
       |> maybe_replace_param(conn, "scope", :default_scope)
       |> maybe_replace_param(conn, "state", :state)
@@ -39,7 +38,7 @@ defmodule Ueberauth.Strategy.Facebook do
       |> Enum.filter(fn {k, _v} -> Enum.member?(allowed_params, k) end)
       |> Enum.map(fn {k, v} -> {String.to_existing_atom(k), v} end)
       |> Keyword.put(:redirect_uri, callback_url(conn))
-      |> Ueberauth.Strategy.Facebook.OAuth.authorize_url!(opts)
+      |> Ueberauth.Strategy.Facebook.OAuth.authorize_url!(conn: conn)
 
     redirect!(conn, authorize_url)
   end
@@ -48,23 +47,24 @@ defmodule Ueberauth.Strategy.Facebook do
   Handles the callback from Facebook.
   """
   def handle_callback!(%Plug.Conn{params: %{"code" => code}} = conn) do
-    opts = oauth_client_options_from_conn(conn)
-
-    config =
-      :ueberauth
-      |> Application.get_env(Ueberauth.Strategy.Facebook.OAuth, [])
-      |> Keyword.merge(opts)
+    # opts = oauth_client_options_from_conn(conn)
+    opts = [redirect_uri: callback_url(conn), conn: conn]
+    Logger.warn("****strat fb  handle_callback************code******* #{inspect(code, pretty: true)}")
 
     try do
+      Logger.warn("****strat fb  handle_callback************try do***before client****")
       client = Ueberauth.Strategy.Facebook.OAuth.get_token!([code: code], opts)
+      Logger.warn("****strat fb  handle_callback************try do*******")
       token = client.token
+      Logger.warn("****strat fb  handle_callback************try do****token*** #{inspect(token)}")
 
       if token.access_token == nil do
         err = token.other_params["error"]
         desc = token.other_params["error_description"]
         set_errors!(conn, [error(err, desc)])
       else
-        fetch_user(conn, client, config)
+        Logger.warn("****strat fb  handle_callback************before fetch_user*******")
+        fetch_user(conn, client, [])
       end
     rescue
       OAuth2.Error ->
@@ -76,9 +76,11 @@ defmodule Ueberauth.Strategy.Facebook do
   Handles the Facebook callback from mobile.
   """
   def handle_mobile_callback(conn, %{token: token}) when is_binary(token) do
+    opts = oauth_client_options_from_conn(conn)
+
     token = OAuth2.AccessToken.new(token)
     client = Ueberauth.Strategy.Facebook.OAuth.client([token: token])
-    query = user_query(conn, client.token)
+    query = user_query(conn, client.token, [])
 
     path = "/me?#{query}"
     case OAuth2.Client.get(client, path) do
@@ -171,16 +173,21 @@ defmodule Ueberauth.Strategy.Facebook do
   end
 
   defp fetch_user(conn, client, config) do
+    Logger.warn("****strat fb  fetch_user********start****")
     conn = put_private(conn, :facebook_token, client.token)
     query = user_query(conn, client.token, config)
     path = "/me?#{query}"
 
+    Logger.warn("****strat fb  fetch_user********before case****")
     case OAuth2.Client.get(client, path) do
       {:ok, %OAuth2.Response{status_code: 401, body: _body}} ->
+        Logger.warn("****strat fb  fetch_user***********case 401****")
         set_errors!(conn, [error("token", "unauthorized")])
 
       {:ok, %OAuth2.Response{status_code: status_code, body: user}}
       when status_code in 200..399 ->
+        Logger.warn("****strat fb  handle_callback************ case do 200-399****status_code*** #{inspect(status_code)}")
+        Logger.warn("****strat fb  handle_callback************ case do 200-399****user*** #{inspect(user, pretty: true)}")
         put_private(conn, :facebook_user, user)
 
       {:error, %OAuth2.Error{reason: reason}} ->
@@ -188,6 +195,12 @@ defmodule Ueberauth.Strategy.Facebook do
     end
   end
 
+  defp user_query(conn, token, []) do
+    %{"appsecret_proof" => appsecret_proof(token, conn)}
+    |> Map.merge(query_params(conn, :locale))
+    |> Map.merge(query_params(conn, :profile))
+    |> URI.encode_query()
+  end
   defp user_query(conn, token, config) do
     %{"appsecret_proof" => appsecret_proof(token, config)}
     |> Map.merge(query_params(conn, :locale))
@@ -195,12 +208,20 @@ defmodule Ueberauth.Strategy.Facebook do
     |> URI.encode_query()
   end
 
-  defp appsecret_proof(token, config) do
+  defp appsecret_proof(token, conn) do
+    config = Application.get_env(:ueberauth, Ueberauth.Strategy.Facebook.OAuth)
+         |> compute_config(conn)
     client_secret = Keyword.get(config, :client_secret)
     token.access_token
     |> hmac(:sha256, client_secret)
     |> Base.encode16(case: :lower)
   end
+  # defp appsecret_proof(token, config) do
+  #   client_secret = Keyword.get(config, :client_secret)
+  #   token.access_token
+  #   |> hmac(:sha256, client_secret)
+  #   |> Base.encode16(case: :lower)
+  # end
 
   defp compute_config(config, conn) do
     with module when is_atom(module) <- Keyword.get(config, :client_secret),
@@ -257,7 +278,7 @@ defmodule Ueberauth.Strategy.Facebook do
   end
 
   defp oauth_client_options_from_conn(conn) do
-    base_options = [redirect_uri: callback_url(conn)]
+    base_options = [redirect_uri: callback_url(conn), conn: conn]
     request_options = conn.private[:ueberauth_request_options].options
 
     case {request_options[:client_id], request_options[:client_secret]} do
